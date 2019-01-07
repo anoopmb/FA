@@ -1,12 +1,12 @@
 <?php
 /**********************************************************************
     Copyright (C) FrontAccounting, LLC.
-	Released under the terms of the GNU General Public License, GPL, 
-	as published by the Free Software Foundation, either version 3 
+	Released under the terms of the GNU General Public License, GPL,
+	as published by the Free Software Foundation, either version 3
 	of the License, or (at your option) any later version.
     This program is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
     See the License here <http://www.gnu.org/licenses/gpl-3.0.html>.
 ***********************************************************************/
 include_once($path_to_root . "/includes/db/class.reflines_db.inc");
@@ -54,7 +54,9 @@ $refline_options = array(
 
 $refline_placeholders = array(
 	'MM' => 'date',
+    'Y' => 'date',
 	'YY' => 'date',
+    'YYY' => 'date',
 	'YYYY' => 'date',
 	'UU' => 'user',
  	'P' => 'pos',
@@ -66,10 +68,10 @@ $refline_placeholders = array(
 //	'L' => 'location'
 );
 
-class references 
+class references
 {
 	var $reflines;
-	
+
 	function __construct()
 	{
 		$this->reflines = new reflines_db();
@@ -121,6 +123,12 @@ class references
 							list($day, $month, $year) = explode_date_to_dmy($context['date']);
 							$out .= $ph == 'MM' ? sprintf('%02d', $month) : ($ph == 'YY' ? sprintf('%02d', $year%100): sprintf('%04d', $year));
 							break;
+                        case 'Y':
+                        case 'YYY':
+                            list($begin_day, $begin_month, $begin_year) = explode_date_to_dmy(begin_fiscalyear());
+                            list($end_day, $end_month, $end_year) = explode_date_to_dmy(end_fiscalyear());
+                            $out .= $ph == 'Y' ? sprintf('%04d', $begin_year): sprintf('%04d', $begin_year)."-".sprintf('%02d', $end_year%100) ;
+                            break;
 						case 'C':
 							$out .= sprintf('%d', $context['customer']);
 							break;
@@ -227,7 +235,7 @@ class references
 	//
 	// Get default reference for new transaction.
 	//
-	function get_next($type, $line=null, $context=null) 
+	function get_next($type, $line=null, $context=null)
 	{
 
 		if (isset($line))
@@ -245,7 +253,7 @@ class references
 
 	/**
  	*	Normalize reference to format allowed by refline (optionally selected by prefix).
- 	*	FIXME: currently this is fake function which return either input reference or 
+ 	*	FIXME: currently this is fake function which return either input reference or
  	*	next reference when no line has been recognized.
 	**/
 	function normalize($ref, $type, $context, $line=null)
@@ -285,12 +293,17 @@ class references
 		if (is_date(@$context['date']))
 		{
 			list($year4, $month, $day) = explode("-", date2sql($context['date']));
+            list($begin_year, $begin_month, $begin_day) = explode("-", date2sql(begin_fiscalyear()));
+            list($end_year, $end_month, $end_day) = explode("-", date2sql(end_fiscalyear()));
 			$year2 = substr($year4, 2);
+            $year3 = $begin_year."-".substr($end_year, 2);
 		} else
 		{
 			$month = '\d{2,}';
 			$year2 = '\d{2,}';
 			$year4 = '\d{4,}';
+            $begin_year = '\d{4,}';
+            $year3 = '\d{4,}-\d{2,}';
 		}
 		$cust = @$context['customer'] ? $context['customer'] : '\d+';
 		$supp = @$context['supplier'] ? $context['supplier'] : '\d+';
@@ -304,7 +317,9 @@ class references
 				'/\\\{/',	// unquote placeholders
 				'/\\\}/',
 				'/\{MM\}/',
+                '/\{Y\}/',
 				'/\{YY\}/',
+                '/\{YYY\}/',
 				'/\{YYYY\}/',
 				'/\{C\}/',
 				'/\{B\}/',
@@ -318,8 +333,10 @@ class references
 				'{',
 				'}',
 				$month,
+                $begin_year,
 				$year2,
-				$year4,
+				$year3,
+                $year4,
 				$cust,
 				$branch,
 				$supp,
@@ -337,7 +354,7 @@ class references
 	//
 	//	Save reference (and prepare next) on write transaction.
 	//
-	function save($type, $id, $reference, $line = null) 
+	function save($type, $id, $reference, $line = null)
 	{
 		if ($reference == 'auto')
 			return;
@@ -386,7 +403,7 @@ class references
 	//
 	//	Increments (or decrements if $back==true) reference template
 	//
-	function _increment($reference, $back=false) 
+	function _increment($reference, $back=false)
 	{
 		// Legacy code used when no palceholder is in use:
 		//  WA036 will increment to WA037 and so on.
@@ -395,7 +412,7 @@ class references
         // NB. preg_match returns 1 if the regex matches completely 
         // also $result[0] holds entire string, 1 the first captured, 2 the 2nd etc.
         //
-        if (preg_match('/^(\D*?)(\d+)(.*)/', $reference, $result) == 1) 
+        if (preg_match('/^(\D*?)(\d+)(.*)/', $reference, $result) == 1)
         {
 			list($all, $prefix, $number, $postfix) = $result;
 			$dig_count = strlen($number); // How many digits? eg. 0003 = 4
@@ -405,7 +422,7 @@ class references
 
 			return $prefix.$nextval.$postfix;
         }
-        else 
+        else
             return $reference;
 	}
 
